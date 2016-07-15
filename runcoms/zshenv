@@ -9,3 +9,15 @@
 if [[ "$SHLVL" -eq 1 && ! -o LOGIN && -s "${ZDOTDIR:-$HOME}/.zprofile" ]]; then
   source "${ZDOTDIR:-$HOME}/.zprofile"
 fi
+
+export TERM=rxvt-unicode-256color
+export GOPATH=/home/edgar/work
+export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+
+# Docker exports
+export UCP_HOST=172.17.0.1
+export UCP_PORT=444
+export UCP_USER=admin
+export UCP_PASS=password
+export DTR_HOST=172.17.0.1
+export DTR_PORT=443

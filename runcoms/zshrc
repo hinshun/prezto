@@ -11,3 +11,18 @@ if [[ -s "${ZDOTDIR:-$HOME}/.zprezto/init.zsh" ]]; then
 fi
 
 # Customize to your needs...
+
+# Capslock as ctrl
+setxkbmap -option ctrl:nocaps
+
+# Aliases
+alias ds-dtr='docker run -it --rm dockerhubenterprise/dtr-dev'
+alias ds-dtr-install='ds-dtr install --ucp-insecure-tls --ucp-url $UCP_HOST:$UCP_PORT --ucp-username $UCP_USER --ucp-password $UCP_PASS --dtr-external-url $DTR_HOST:$DTR_PORT'
+alias ds-dtr-reconfigure='ds-dtr reconfigure --ucp-insecure-tls --ucp-url $UCP_HOST:$UCP_PORT --ucp-username $UCP_USER --ucp-password $UCP_PASS'
+alias ds-dtr-upgrade='ds-dtr upgrade --ucp-insecure-tls --ucp-url $UCP_HOST:$UCP_PORT --ucp-username $UCP_USER --ucp-password $UCP_PASS'
+alias ds-dtr-nuke='docker ps -a | grep dtr | grep -v enzi | awk '"'"'{print $1}'"'"' | xargs docker rm -f; docker volume ls | grep dtr | awk '"'"'{print $2}'"'"' | xargs docker volume rm'
+alias ds-ucp='docker run -it --rm --name ucp -v /var/run/docker.sock:/var/run/docker.sock docker/ucp'
+alias ds-dtr-trust='sudo mkdir -p /etc/docker/certs.d/$DTR_HOST; openssl s_client -showcerts -connect $DTR_HOST:443 2>/dev/null < /dev/null | openssl x509 -outform PEM 2>/dev/null | sudo tee /etc/docker/certs.d/$DTR_HOST/ca.crt'
+alias ds-etcd='docker run --rm -v dtr-ca-$REPLICA_ID:/ca --net dtr-br -it --entrypoint /etcdctl docker/dtr-etcd:v2.2.4 --endpoint https://dtr-etcd-$REPLICA_ID.dtr-br:2379 --ca-file /ca/etcd/cert.pem --key-file /ca/etcd-client/key.pem --cert-file /ca/etcd-client/cert.pem'
+
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
