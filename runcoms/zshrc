@@ -26,7 +26,18 @@ alias ds-dtr-trust='sudo mkdir -p /etc/docker/certs.d/$DTR_HOST; openssl s_clien
 alias ds-dtr-etcdctl='docker run --rm -v dtr-ca-$REPLICA_ID:/ca --net dtr-br -it --entrypoint /etcdctl docker/dtr-etcd:v2.2.4 --endpoint https://dtr-etcd-$REPLICA_ID.dtr-br:2379 --ca-file /ca/etcd/cert.pem --key-file /ca/etcd-client/key.pem --cert-file /ca/etcd-client/cert.pem'
 
 string2hex() {
-  echo -n "$@" | od -A n -t x1 | sed 's/ *//g'
+  local string
+
+  if [[ -z $@ ]]; then
+    string=$(less <&0)
+  else
+    string=$@
+  fi
+  echo -n "$string" | od -A n -t x1 | sed 's/ *//g'
+}
+
+fco() {
+  git checkout $(git branch -vv | fzf --header "Pick branch to checkout" | sed 's/^\*\? *//g' | awk '{print $1}')
 }
 
 ds-log() {
