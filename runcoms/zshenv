@@ -20,10 +20,9 @@ export UCP_USER=admin
 export UCP_PASS=password
 export UCP_PORT=444
 export UCP_SWARM_PORT=3376
+
 export DTR_PORT=443
 
-export ETCD_CLIENT_PORT1=2379
-export ETCD_CLIENT_PORT2=4001
-export ETCD_PEER_PORT=2380
+export ETCD_CLIENT_PORT=2379
 
 export CONSUL_PORT=8500

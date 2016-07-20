@@ -29,11 +29,34 @@ string2hex() {
   echo -n "$@" | od -A n -t x1 | sed 's/ *//g'
 }
 
+ds-log() {
+  tput setaf $1
+  echo -n $2
+  tput sgr0
+  echo "[DS]" ${@:3}
+}
+
+ds-log-info() {
+  # blue
+  ds-log 4 "INFO" $@
+}
+
+ds-log-fatal() {
+  # red
+  ds-log 1 "FATA" $@
+}
+
+ds-log-warn() {
+  # yellow
+  ds-log 3 "WARN" $@ >&2
+}
+
 ds-switch() {
   local docker none
   none="none"
   docker=$( ( cd $HOME/.bin/docker-versions ; ls docker* ; echo $none ) | fzf -1 --header "Pick docker version for host" ) &&
 
+  ds-log-info "Switching to $docker..."
   if [[ $docker == $none ]]; then
     rm $HOME/.bin/docker
   else
@@ -42,10 +65,18 @@ ds-switch() {
 }
 
 ds-machine-create() {
-  local iso_list
-  iso_list=$( ls $HOME/iso/*.iso | fzf -1 --header "Pick ISO for the new machine" ) &&
+  local iso
+  iso=$( ls $HOME/iso/*.iso | fzf -1 --header "Pick ISO for the new machine" ) &&
 
-  docker-machine create -d kvm --kvm-memory 2048 --kvm-disk-size 8000 --kvm-cache-mode unsafe --kvm-boot2docker-url $iso_list $@
+  # Hack to check iso emptiness
+  echo $iso > /dev/null
+  if [[ $iso == "" ]]; then
+    ds-log-fatal "No iso was selected. Aborting."
+    return 0
+  fi
+
+  ds-log-info "Create KVM using iso $iso..."
+  docker-machine create -d kvm --kvm-memory 2048 --kvm-disk-size 8000 --kvm-cache-mode unsafe --kvm-boot2docker-url $iso $@
 }
 
 ds-machine-create-cluster() {
@@ -57,19 +88,19 @@ ds-machine-create-cluster() {
 
   has_etcd=$( ( eval "${machine_env}" ; docker ps ) | grep etcd | wc -l )
   if [[ $has_etcd -ge 1 ]]; then
-    echo "Detected etcd keystore on node $node"
-    ds-machine-create --engine-opt="cluster-store=etcd://${host_address}:$ETCD_CLIENT_PORT1" --engine-opt="cluster-advertise=eth1:2376" $@
+    ds-log-info "Detected etcd keystore on node $node..."
+    ds-machine-create --engine-opt="cluster-store=etcd://${host_address}:$ETCD_CLIENT_PORT" --engine-opt="cluster-advertise=eth1:2376" $@
     return 0
   fi
 
   has_consul=$( ( eval "${machine_env}" ; docker ps ) | grep consul | wc -l )
   if [[ $has_consul -ge 1 ]]; then
-    echo "Detected consul keystore on node $node"
+    ds-log-info "Detected consul keystore KVM on node $node..."
     ds-machine-create --engine-opt="cluster-store=consul://${host_address}:$CONSUL_PORT" --engine-opt="cluster-advertise=eth1:2376" $@
     return 0
   fi
 
-  echo "Did not detect supported {etcd, consul} keystore on node $node" >&2
+  ds-log-fatal "No supported keystore (etcd, consul) was detected on node $node."
   return 1
 }
 
@@ -82,42 +113,41 @@ ds-machine-ls() {
   docker-machine ls | fzf -1 --header-lines 1 $fzf_header | awk '{print $1}'
 }
 
-ds-machine-env() {
-  local node
-  node=$( ds-machine-ls $1 ) &&
-  docker-machine env $node
-}
-
 ds-machine-transfer() {
-  local node images
-  node=$( ds-machine-ls "Pick node for image transfer" ) &&
-  images=$( docker images | fzf -1 -m --header-lines 1 --header "Pick images for image transfer" | awk '{print $1 ":" $2}' ) &&
+  local nodes images
+  nodes=$( docker-machine ls | fzf -1 -m --header-lines 1 --header "Pick node(s) for image transfer" | awk '{print $1}' ) &&
 
-  ds-machine-transfer-images $node $images
+  if [[ $@ != "" ]]; then
+    images=$@
+  else
+    images=$( docker images | fzf -1 -m --header-lines 1 --header "Pick images for image transfer" | awk '{print $1 ":" $2}' ) &&
+  fi
+
+  echo $nodes | while read node ; do
+    ds-machine-transfer-images $node $images
+  done
 }
 
 ds-machine-transfer-ucp() {
-  local node
-  node=$( ds-machine-ls "Pick node for image transfer" ) &&
-
-  ds-machine-transfer-images $node docker/ucp $(docker run --rm docker/ucp images --list)
+  ds-machine-transfer $( docker run --rm docker/ucp images --list ; echo docker/ucp )
 }
 
 ds-machine-transfer-dtr() {
-  local node
-  node=$( ds-machine-ls "Pick node for image transfer" ) &&
-
-  ds-machine-transfer-images $node docker/ucp dockerhubenterprise/dtr-dev $(docker run --rm dockerhubenterprise/dtr-dev images)
+  ds-machine-transfer $( docker run --rm dockerhubenterprise/dtr-dev images ; echo dockerhubenterprise/dtr-dev )
 }
 
 ds-machine-transfer-images() {
-  command -v jq >/dev/null 2>&1 || { echo "I require jq but it's not installed.  Aborting." >&2; return 1; }
+  command -v jq >/dev/null 2>&1 || {
+    ds-log-fatal "Require jq but it's not installed. Aborting."
+    return 1
+  }
 
-  local transfer_images machine_env
+  local transfer_images machine_env images
 
   machine_env=$( docker-machine env $1 ) &&
+  images=$( echo ${@:2} | sed 's/ /\n/g' ) &&
 
-  for image in ${@:2} ; do
+  echo $images | while read image ; do
     local our_id remote_id
 
     # Check to see if the image ID's match
@@ -126,7 +156,7 @@ ds-machine-transfer-images() {
     if [ "${our_id}" != "${remote_id}" ] ; then
       transfer_images="${transfer_images} ${image}"
     else
-      echo "Image ${image} already in sync"
+      ds-log-info "Image $image already in sync"
     fi
   done
   if [ -n "${transfer_images}" ] ; then
@@ -135,16 +165,24 @@ ds-machine-transfer-images() {
 }
 
 ds-run() {
-  local machine_env
-  machine_env=$( ds-machine-env "Pick node for command to run on" ) &&
+  local node machine_env host_address
 
+  node=$( ds-machine-ls "Pick node for command to run on" ) &&
+  machine_env=$( docker-machine env $node ) &&
+  host_address=$( docker-machine ip $node ) &&
+
+  ds-log-info "Running command on node $node ($host_address)..."
   ( eval "${machine_env}" ; $@ )
 }
 
 ds-run-ucp() {
-  local machine_env
-  machine_env=$( ds-machine-env "Pick node for UCP" ) &&
+  local node machine_env host_address
 
+  node=$( ds-machine-ls "Pick node for UCP" ) &&
+  machine_env=$( docker-machine env $node ) &&
+  host_address=$( docker-machine ip $node ) &&
+
+  ds-log-info "Running docker/ucp on node $node ($host_address)..."
   ( eval "${machine_env}" ; docker run -it --rm --name ucp -v /var/run/docker.sock:/var/run/docker.sock docker/ucp $@ )
 }
 
@@ -155,6 +193,7 @@ ds-run-ucp-install() {
   machine_env=$( docker-machine env $node ) &&
   host_address=$( docker-machine ip $node ) &&
 
+  ds-log-info "Installing UCP controller on node $node ($host_address:$UCP_PORT)..."
   ( eval "${machine_env}" ; docker run -it --rm --name ucp -v /var/run/docker.sock:/var/run/docker.sock docker/ucp install --fresh-install --admin-username $UCP_USER --admin-password $UCP_PASS --host-address $host_address --controller-port $UCP_PORT --swarm-port $UCP_SWARM_PORT )
 }
 
@@ -170,14 +209,33 @@ ds-run-ucp-join() {
   join_machine_env=$( docker-machine env $join_node ) &&
   join_host_address=$( docker-machine ip $join_node ) &&
 
+  ds-log-info "Installing UCP worker on node $join_node ($join_host_address:$UCP_PORT) and joining cluster on node $controller_node ($controller_host_address:$UCP_PORT)..."
   ( eval "${join_machine_env}" ; docker run -it --rm --name ucp -v /var/run/docker.sock:/var/run/docker.sock docker/ucp join --admin-username $UCP_USER --admin-password $UCP_PASS --host-address $join_host_address --controller-port $UCP_PORT --swarm-port $UCP_SWARM_PORT --url "https://$controller_host_address:$UCP_PORT" --fingerprint $controller_fingerprint )
 }
 
 ds-run-dtr() {
-  local machine_env
-  machine_env=$( ds-machine-env "Pick node for DTR" ) &&
+  docker run -it --rm dockerhubenterprise/dtr-dev $@
+}
 
-  ( eval "${machine_env}" ; docker run -it --rm dockerhubenterprise/dtr-dev $@ )
+curl -k -s -H "Authorization: Bearer $(curl --insecure https://$TEST/auth/login -d '{"username": "'"$UCP_USER"'", "password": "'"$UCP_PASS"'"}' -X POST -s | jq -r ".auth_token")" https://$TEST/api/clientbundle
+
+$(curl --insecure https://$TEST/auth/login -d '{"username": "'"$UCP_USER"'", "password": "'"$UCP_PASS"'"}' -X POST -s | jq -r ".auth_token")
+
+ds-run-ucp-bundle(){
+  local token
+
+  token=$(curl --insecure https://$1/auth/login -d '{"username": "'"$UCP_USER"'", "password": "'"$UCP_PASS"'"}' -X POST -s | jq -r ".auth_token")
+  curl -k -s -H "Authorization: Bearer ${token}" https://$1/api/clientbundle > /tmp/bundle.zip
+
+  mkdir /tmp/certs-$token
+  pushd /tmp/certs-$token
+
+  unzip /tmp/bundle.zip > /dev/null
+  /bin/rm /tmp/bundle.zip
+
+  cat /tmp/certs-$token/env.sh | sed 's/$(pwd)/\/tmp\/certs-'"$token"'/'
+
+  popd
 }
 
 ds-run-dtr-install() {
@@ -189,7 +247,7 @@ ds-run-dtr-install() {
 
   ucp_image_count=$( (eval "${ucp_machine_env}" ; docker ps ) | sed 1d | awk '{print $2}' | grep docker/ucp | wc -l ) &&
   if [[ ucp_image_count -eq 0 ]]; then
-    echo "UCP not installed on machine $ucp_node" >&2
+    ds-log-fatal "UCP is not installed on node $ucp_node ($ucp_url). Aborting."
     return 1
   fi
 
@@ -198,11 +256,12 @@ ds-run-dtr-install() {
   dtr_url="$( docker-machine ip $dtr_node ):$DTR_PORT"
   dtr_replica_id=$( string2hex $dtr_node | awk '{ printf("%-12s", $0) }' | sed 's/ /0/g' )
 
-  ( eval "${dtr_machine_env}" ; docker run -it --rm dockerhubenterprise/dtr-dev install --ucp-insecure-tls --ucp-url $ucp_url --ucp-username $UCP_USER --ucp-password $UCP_PASS --dtr-external-url $dtr_url --ucp-node $dtr_node --replica-id $dtr_replica_id )
+  ds-log-info "Installing DTR on node $dtr_node ($dtr_url) with replica ID $replica_id for UCP cluster on node $ucp_node ($ucp_url)..."
+  ( eval $(ds-run-ucp-bundle $ucp_url) ; docker run -it --rm dockerhubenterprise/dtr-dev install --ucp-insecure-tls --ucp-url $ucp_url --ucp-username $UCP_USER --ucp-password $UCP_PASS --dtr-external-url $dtr_url --ucp-node $dtr_node --replica-id $dtr_replica_id )
 }
 
 ds-run-dtr-join() {
-  local ucp_node ucp_machine_env ucp_url ucp_image_count dtr_node dtr_machine_env dtr_replica_id dtr_replica_node dtr_replica_machine_env dtr_replica_url
+  local ucp_node ucp_machine_env ucp_url ucp_image_count dtr_node dtr_machine_env dtr_url dtr_replica_id dtr_replica_node dtr_replica_machine_env dtr_replica_url
 
   ucp_node=$( ds-machine-ls "Pick node for UCP controller" ) &&
   ucp_machine_env=$( docker-machine env $ucp_node ) &&
@@ -210,18 +269,19 @@ ds-run-dtr-join() {
 
   ucp_image_count=$( (eval "${ucp_machine_env}" ; docker ps ) | sed 1d | awk '{print $2}' | grep docker/ucp | wc -l ) &&
   if [[ ucp_image_count -eq 0 ]]; then
-    echo "UCP not installed on machine $ucp_node" >&2
+    ds-log-fatal "UCP is not installed on node $ucp_node ($ucp_url). Aborting."
     return 1
   fi
 
   dtr_node=$( ds-machine-ls "Pick node for existing DTR" ) &&
   dtr_machine_env=$( docker-machine env $dtr_node ) &&
+  dtr_url="$( docker-machine ip $dtr_node ):$DTR_PORT"
 
   dtr_replica_id=$( string2hex $dtr_node | awk '{ printf("%-12s", $0) }' | sed 's/ /0/g' )
 
   dtr_image_count=$( (eval "${dtr_machine_env}" ; docker ps ) | sed 1d | awk '{print $2}' | grep dockerhubenterprise/dtr | wc -l ) &&
   if [[ dtr_image_count -eq 0 ]]; then
-    echo "DTR not installed on machine $dtr_node" >&2
+    ds-log-fatal "DTR is not installed on node $dtr_node ($dtr_url). Aborting."
     return 1
   fi
 
@@ -229,9 +289,8 @@ ds-run-dtr-join() {
   dtr_replica_machine_env=$( docker-machine env $dtr_replica_node ) &&
   dtr_replica_url="$( docker-machine ip $dtr_replica_node ):$DTR_PORT"
 
-  echo docker run -it --rm dockerhubenterprise/dtr-dev join --ucp-insecure-tls --ucp-url $ucp_url --ucp-username $UCP_USER --ucp-password $UCP_PASS --dtr-external-url $dtr_replica_url --ucp-node $dtr_replica_node --existing-replica-id $dtr_replica_id
-
-  ( eval "${dtr_replica_machine_env}" ; docker run -it --rm dockerhubenterprise/dtr-dev join --ucp-insecure-tls --ucp-url $ucp_url --ucp-username $UCP_USER --ucp-password $UCP_PASS --ucp-node $dtr_replica_node --existing-replica-id $dtr_replica_id )
+  ds-log-info "Installing DTR replica on node $dtr_replica_node ($dtr_replica_url) replicating DTR cluster on node $dtr_node ($dtr_url)..."
+  ( eval $(ds-run-ucp-bundle $ucp_url) ; docker run -it --rm dockerhubenterprise/dtr-dev join --ucp-insecure-tls --ucp-url $ucp_url --ucp-username $UCP_USER --ucp-password $UCP_PASS --ucp-node $dtr_replica_node --existing-replica-id $dtr_replica_id )
 }
 
 ds-run-dtr-etcd() {
@@ -241,14 +300,18 @@ ds-run-dtr-etcd() {
   machine_env=$( docker-machine env $node ) &&
   host_address=$( docker-machine ip $node ) &&
 
-  ( eval "${machine_env}" ; docker run -d -p $ETCD_CLIENT_PORT2:$ETCD_CLIENT_PORT2 -p $ETCD_PEER_PORT:$ETCD_PEER_PORT -p $ETCD_CLIENT_PORT1:$ETCD_CLIENT_PORT1 --name etcd docker/dtr-etcd:v2.2.4 -name etcd0 -advertise-client-urls http://${host_address}:$ETCD_CLIENT_PORT1,http://${host_address}:$ETCD_CLIENT_PORT2 -listen-client-urls http://0.0.0.0:$ETCD_CLIENT_PORT1,http://0.0.0.0:$ETCD_CLIENT_PORT2 -initial-advertise-peer-urls http://${host_address}:$ETCD_PEER_PORT -listen-peer-urls http://0.0.0.0:$ETCD_PEER_PORT -initial-cluster-token etcd-cluster-1 -initial-cluster etcd0=http://${host_address}:$ETCD_PEER_PORT -initial-cluster-state new )
+  ds-log-info "Running etcd on node $node ($host_address)..."
+  ( eval "${machine_env}" ; docker run -d -p $ETCD_CLIENT_PORT:$ETCD_CLIENT_PORT --name etcd docker/dtr-etcd:v2.2.4 -name etcd0 -listen-client-urls http://0.0.0.0:$ETCD_CLIENT_PORT -advertise-client-urls http://${host_address}:$ETCD_CLIENT_PORT )
 }
 
 ds-run-consul() {
-  local machine_env
+  local node machine_env host_address
 
-  machine_env=$( ds-machine-env "Pick node for consul keystore" ) &&
+  node=$( ds-machine-ls "Pick node for consul keystore" ) &&
+  machine_env=$( docker-machine env $node ) &&
+  host_address=$( docker-machine ip $node ) &&
 
+  ds-log-info "Running consul on node $node ($host_address)..."
   ( eval "${machine_env}" ; docker run -d -p $CONSUL_PORT:$CONSUL_PORT -h consul progrium/consul -server -bootstrap )
 }
 
