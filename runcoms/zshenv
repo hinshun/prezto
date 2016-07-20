@@ -20,6 +20,7 @@ export UCP_USER=admin
 export UCP_PASS=password
 export UCP_PORT=444
 export UCP_SWARM_PORT=3376
+export UCP_LB_PORT=446
 
 export DTR_PORT=443
 

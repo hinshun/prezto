@@ -217,10 +217,6 @@ ds-run-dtr() {
   docker run -it --rm dockerhubenterprise/dtr-dev $@
 }
 
-curl -k -s -H "Authorization: Bearer $(curl --insecure https://$TEST/auth/login -d '{"username": "'"$UCP_USER"'", "password": "'"$UCP_PASS"'"}' -X POST -s | jq -r ".auth_token")" https://$TEST/api/clientbundle
-
-$(curl --insecure https://$TEST/auth/login -d '{"username": "'"$UCP_USER"'", "password": "'"$UCP_PASS"'"}' -X POST -s | jq -r ".auth_token")
-
 ds-run-ucp-bundle(){
   local token
 
