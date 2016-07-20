@@ -29,6 +29,18 @@ string2hex() {
   echo -n "$@" | od -A n -t x1 | sed 's/ *//g'
 }
 
+ds-switch() {
+  local docker none
+  none="none"
+  docker=$( ( cd $HOME/.bin/docker-versions ; ls docker* ; echo $none ) | fzf -1 --header "Pick docker version for host" ) &&
+
+  if [[ $docker == $none ]]; then
+    rm $HOME/.bin/docker
+  else
+    cp $HOME/.bin/docker-versions/$docker $HOME/.bin/docker
+  fi
+}
+
 ds-machine-create() {
   local iso_list
   iso_list=$( ls $HOME/iso/*.iso | fzf -1 --header "Pick ISO for the new machine" ) &&

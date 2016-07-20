@@ -11,8 +11,8 @@ if [[ "$SHLVL" -eq 1 && ! -o LOGIN && -s "${ZDOTDIR:-$HOME}/.zprofile" ]]; then
 fi
 
 export TERM=rxvt-unicode-256color
-export GOPATH=/home/edgar/gopath
-export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+export GOPATH=$HOME/gopath
+export PATH=$HOME/.dotfiles/bin:$PATH:/usr/local/go/bin:$GOPATH/bin
 export LD_LIBRARY_PATH=/usr/local/lib
 
 # UCP/DTR exports
