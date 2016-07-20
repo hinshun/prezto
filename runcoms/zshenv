@@ -11,13 +11,19 @@ if [[ "$SHLVL" -eq 1 && ! -o LOGIN && -s "${ZDOTDIR:-$HOME}/.zprofile" ]]; then
 fi
 
 export TERM=rxvt-unicode-256color
-export GOPATH=/home/edgar/work
+export GOPATH=/home/edgar/gopath
 export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+export LD_LIBRARY_PATH=/usr/local/lib
 
-# Docker exports
-export UCP_HOST=172.17.0.1
-export UCP_PORT=444
+# UCP/DTR exports
 export UCP_USER=admin
 export UCP_PASS=password
-export DTR_HOST=172.17.0.1
+export UCP_PORT=444
+export UCP_SWARM_PORT=3376
 export DTR_PORT=443
+
+export ETCD_CLIENT_PORT1=2379
+export ETCD_CLIENT_PORT2=4001
+export ETCD_PEER_PORT=2380
+
+export CONSUL_PORT=8500
