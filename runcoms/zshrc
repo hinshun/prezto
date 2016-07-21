@@ -15,6 +15,8 @@ fi
 # Capslock as ctrl
 setxkbmap -option ctrl:nocaps
 
+alias multi-monitor='xrandr --output eDP1 --mode 3200x1800 --output DP1 --auto --left-of eDP1'
+
 # UCP Aliases
 alias ds-run-ucp-local='docker run -it --rm --name ucp -v /var/run/docker.sock:/var/run/docker.sock docker/ucp'
 
