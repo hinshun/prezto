@@ -10,20 +10,6 @@ if [[ "$SHLVL" -eq 1 && ! -o LOGIN && -s "${ZDOTDIR:-$HOME}/.zprofile" ]]; then
   source "${ZDOTDIR:-$HOME}/.zprofile"
 fi
 
-export TERM=rxvt-unicode-256color
-export GOPATH=$HOME/gopath
-export PATH=$HOME/.dotfiles/bin:$PATH:/usr/local/go/bin:$GOPATH/bin
+export GOPATH=$HOME/go
+export PATH=$HOME/.dotfiles/bin:$PATH:/usr/local/go/bin:$GOPATH/bin:$HOME/.cargo/env:$HOME/code/alacritty/target/release
 export LD_LIBRARY_PATH=/usr/local/lib
-
-# UCP/DTR exports
-export UCP_USER=admin
-export UCP_PASS=password
-export UCP_PORT=444
-export UCP_SWARM_PORT=3376
-export UCP_LB_PORT=446
-
-export DTR_PORT=443
-
-export ETCD_CLIENT_PORT=2379
-
-export CONSUL_PORT=8500
